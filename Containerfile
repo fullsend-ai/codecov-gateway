@@ -1,0 +1,52 @@
+FROM haproxytech/haproxy-alpine:3.5 AS build
+RUN apk update --no-cache && apk upgrade --no-cache && apk add --no-cache gettext && \
+    rm -f /usr/local/bin/dataplaneapi
+RUN mkdir -p /etc/codecov/ssl/certs && chown -R haproxy:0 /etc/codecov && chmod -R g+rwx /etc/codecov
+COPY --chown=haproxy:0 --chmod=664 config/0-haproxy.conf /etc/haproxy/0-haproxy.conf.template
+COPY --chown=haproxy:0 --chmod=664 config/0-haproxy-no-chroot.conf /etc/haproxy/0-haproxy-no-chroot.conf.template
+COPY --chmod=755 entrypoint.sh /usr/local/bin/entrypoint.sh
+COPY --chown=haproxy:0 --chmod=664 config/3-ssl.conf /etc/haproxy/3-ssl.conf.template
+COPY --chown=haproxy:0 --chmod=664 config/1-backends.conf /etc/haproxy/1-backends.conf.template
+COPY --chown=haproxy:0 --chmod=664 config/1-minio.conf /etc/haproxy/1-minio.conf.template
+COPY --chown=haproxy:0 --chmod=664 config/2-http.conf /etc/haproxy/2-http.conf.template
+COPY --chown=haproxy:0 --chmod=664 config/codecov.map /etc/haproxy/codecov.map.template
+COPY --chown=haproxy:0 --chmod=664 config/proxy.map /etc/haproxy/proxy.map
+COPY --chown=haproxy:0 --chmod=664 config/minio.map /etc/haproxy/minio.map
+
+RUN chown -R haproxy:0 /var/lib/haproxy && chmod -R g+rwx /var/lib/haproxy && \
+    mkdir -p /run && chown -R haproxy:0 /etc/haproxy && chmod -R g+rwx /etc/haproxy && \
+    chown -R haproxy:0 /run && chmod -R g+rwx /run
+
+FROM scratch
+COPY --from=build / /
+
+ENV CODECOV_API_HOST=api
+ENV CODECOV_API_PORT=8000
+ENV CODECOV_API_SCHEME=http
+ENV CODECOV_API_HOST_HEADER="%[req.hdr(Host)]"
+ENV CODECOV_API_ADMIN_ENABLED=false
+ENV CODECOV_API_ADMIN_PATH=admin
+ENV CODECOV_API_ADMIN_DEBUG_ENABLED=false
+ENV CODECOV_IA_HOST=api
+ENV CODECOV_IA_PORT=8000
+ENV CODECOV_IA_SCHEME=http
+ENV CODECOV_IA_HOST_HEADER="%[req.hdr(Host)]"
+ENV CODECOV_DEFAULT_HOST=frontend
+ENV CODECOV_DEFAULT_PORT=8080
+ENV CODECOV_DEFAULT_SCHEME=http
+ENV CODECOV_DEFAULT_HOST_HEADER="%[req.hdr(Host)]"
+ENV CODECOV_MINIO_HOST=minio
+ENV CODECOV_MINIO_PORT=9000
+ENV CODECOV_MINIO_SCHEME=http
+ENV CODECOV_MINIO_HOST_HEADER="%[req.hdr(Host)]"
+ENV CODECOV_GATEWAY_HTTP_PORT=8080
+ENV CODECOV_GATEWAY_HTTPS_PORT=8443
+ARG COMMIT_SHA
+ARG VERSION
+ENV BUILD_ID=$COMMIT_SHA
+ENV BUILD_VERSION=$VERSION
+
+STOPSIGNAL SIGUSR1
+EXPOSE 8080
+EXPOSE 8443
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
